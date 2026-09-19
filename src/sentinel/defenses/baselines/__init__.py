@@ -10,6 +10,7 @@ from sentinel.defenses.baselines.heuristic_risk import HeuristicRiskDefense
 from sentinel.defenses.baselines.keyword import KeywordDefense
 from sentinel.defenses.baselines.provenance import ProvenanceDefense
 from sentinel.defenses.interface import Defense
+from sentinel.defenses.baselines.TrustIssues_defense import TrustIssuesDefense
 
 BASELINES: dict[str, Callable[[], Defense]] = {
     "allow_all": AllowAllDefense,
@@ -17,6 +18,7 @@ BASELINES: dict[str, Callable[[], Defense]] = {
     "keyword": KeywordDefense,
     "heuristic_risk": HeuristicRiskDefense,
     "provenance": ProvenanceDefense,
+    "trustissues": TrustIssuesDefense,
 }
 
 

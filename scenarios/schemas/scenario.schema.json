@@ -1,0 +1,814 @@
+{
+  "$defs": {
+    "AttackFamily": {
+      "enum": [
+        "none",
+        "direct_instruction",
+        "indirect_prompt_injection",
+        "context_aware_injection",
+        "multi_step",
+        "memory_poisoning",
+        "tool_output_manipulation",
+        "unauthorized_capability",
+        "data_exfiltration",
+        "goal_hijacking",
+        "monitor_evasion"
+      ],
+      "title": "AttackFamily",
+      "type": "string"
+    },
+    "AttackSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "difficulty": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Difficulty",
+          "type": "integer"
+        },
+        "family": {
+          "$ref": "#/$defs/AttackFamily",
+          "default": "none"
+        },
+        "max_mutations": {
+          "default": 3,
+          "maximum": 20,
+          "minimum": 0,
+          "title": "Max Mutations",
+          "type": "integer"
+        },
+        "objective": {
+          "default": "",
+          "title": "Objective",
+          "type": "string"
+        },
+        "payloads": {
+          "items": {
+            "$ref": "#/$defs/Payload"
+          },
+          "title": "Payloads",
+          "type": "array"
+        },
+        "present": {
+          "default": false,
+          "title": "Present",
+          "type": "boolean"
+        },
+        "share_payloads_with_attacker": {
+          "default": true,
+          "title": "Share Payloads With Attacker",
+          "type": "boolean"
+        },
+        "surfaces": {
+          "items": {
+            "$ref": "#/$defs/Surface"
+          },
+          "title": "Surfaces",
+          "type": "array"
+        }
+      },
+      "title": "AttackSpec",
+      "type": "object"
+    },
+    "CanarySpec": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_destinations": {
+          "items": {
+            "$ref": "#/$defs/TrustLevel"
+          },
+          "title": "Allowed Destinations",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "secret_token",
+            "account_id",
+            "access_token",
+            "contract_ref"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9_]{1,47}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "sensitivity": {
+          "$ref": "#/$defs/Sensitivity",
+          "default": "restricted"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "CanarySpec",
+      "type": "object"
+    },
+    "CustomCondition": {
+      "additionalProperties": false,
+      "description": "Extension point: a grader registered in sentinel.evaluator.task_graders by name.",
+      "properties": {
+        "grader": {
+          "pattern": "^[a-z][a-z0-9_]{1,63}$",
+          "title": "Grader",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Params",
+          "type": "object"
+        },
+        "type": {
+          "const": "custom",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "grader"
+      ],
+      "title": "CustomCondition",
+      "type": "object"
+    },
+    "Domain": {
+      "enum": [
+        "enterprise",
+        "finance",
+        "soc"
+      ],
+      "title": "Domain",
+      "type": "string"
+    },
+    "MutationOperation": {
+      "enum": [
+        "replace_text",
+        "append_text",
+        "set_tool_text",
+        "write_memory"
+      ],
+      "title": "MutationOperation",
+      "type": "string"
+    },
+    "NoEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "effect": {
+          "title": "Effect",
+          "type": "string"
+        },
+        "type": {
+          "const": "no_effect",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "effect"
+      ],
+      "title": "NoEffect",
+      "type": "object"
+    },
+    "Payload": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/MutationOperation"
+        },
+        "surface": {
+          "title": "Surface",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "surface",
+        "operation",
+        "text"
+      ],
+      "title": "Payload",
+      "type": "object"
+    },
+    "PlanStep": {
+      "additionalProperties": false,
+      "description": "One step of the evaluator-only reference plan (ground truth for legitimate behavior).",
+      "properties": {
+        "action": {
+          "enum": [
+            "tool_call",
+            "respond",
+            "memory_write"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "args": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Args",
+          "type": "object"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        },
+        "content": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content"
+        },
+        "final": {
+          "default": false,
+          "title": "Final",
+          "type": "boolean"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]{0,31}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "match_keys": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Match Keys"
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool"
+        }
+      },
+      "required": [
+        "id",
+        "action"
+      ],
+      "title": "PlanStep",
+      "type": "object"
+    },
+    "RecordExists": {
+      "additionalProperties": false,
+      "properties": {
+        "collection": {
+          "title": "Collection",
+          "type": "string"
+        },
+        "type": {
+          "const": "record_exists",
+          "title": "Type",
+          "type": "string"
+        },
+        "where": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Where",
+          "type": "object"
+        }
+      },
+      "required": [
+        "type",
+        "collection"
+      ],
+      "title": "RecordExists",
+      "type": "object"
+    },
+    "RecordFieldContains": {
+      "additionalProperties": false,
+      "properties": {
+        "collection": {
+          "title": "Collection",
+          "type": "string"
+        },
+        "facts": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Facts",
+          "type": "array"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "type": {
+          "const": "record_field_contains",
+          "title": "Type",
+          "type": "string"
+        },
+        "where": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Where",
+          "type": "object"
+        }
+      },
+      "required": [
+        "type",
+        "collection",
+        "field",
+        "facts"
+      ],
+      "title": "RecordFieldContains",
+      "type": "object"
+    },
+    "RecordFieldEquals": {
+      "additionalProperties": false,
+      "properties": {
+        "collection": {
+          "title": "Collection",
+          "type": "string"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "type": {
+          "const": "record_field_equals",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        },
+        "where": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Where",
+          "type": "object"
+        }
+      },
+      "required": [
+        "type",
+        "collection",
+        "field",
+        "value"
+      ],
+      "title": "RecordFieldEquals",
+      "type": "object"
+    },
+    "ResponseContains": {
+      "additionalProperties": false,
+      "properties": {
+        "facts": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Facts",
+          "type": "array"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "type": {
+          "const": "response_contains",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "facts"
+      ],
+      "title": "ResponseContains",
+      "type": "object"
+    },
+    "SecurityProperty": {
+      "enum": [
+        "no_unauthorized_tool",
+        "consequential_requires_confirmation",
+        "no_sensitive_data_to_untrusted_sink",
+        "no_forbidden_effect",
+        "tool_prerequisites"
+      ],
+      "title": "SecurityProperty",
+      "type": "string"
+    },
+    "Sensitivity": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "restricted"
+      ],
+      "title": "Sensitivity",
+      "type": "string"
+    },
+    "Split": {
+      "enum": [
+        "public",
+        "validation"
+      ],
+      "title": "Split",
+      "type": "string"
+    },
+    "Surface": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]{0,47}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/SurfaceKind"
+        },
+        "max_chars": {
+          "default": 1500,
+          "maximum": 8000,
+          "minimum": 1,
+          "title": "Max Chars",
+          "type": "integer"
+        },
+        "operations": {
+          "items": {
+            "$ref": "#/$defs/MutationOperation"
+          },
+          "minItems": 1,
+          "title": "Operations",
+          "type": "array"
+        },
+        "target": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}/[A-Za-z0-9][A-Za-z0-9_.-]{0,63}/[a-z][a-z0-9_]{0,63}$",
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "target",
+        "operations"
+      ],
+      "title": "Surface",
+      "type": "object"
+    },
+    "SurfaceKind": {
+      "enum": [
+        "email",
+        "document",
+        "wiki",
+        "ticket",
+        "case_document",
+        "log",
+        "intel",
+        "alert",
+        "tool_output",
+        "memory"
+      ],
+      "title": "SurfaceKind",
+      "type": "string"
+    },
+    "TrustLevel": {
+      "description": "Ordered from most to least trusted.",
+      "enum": [
+        "system_policy",
+        "authenticated_user",
+        "trusted_internal",
+        "untrusted_internal",
+        "untrusted_external",
+        "adversary_controlled"
+      ],
+      "title": "TrustLevel",
+      "type": "string"
+    },
+    "Turn": {
+      "additionalProperties": false,
+      "properties": {
+        "goal": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "reference_plan": {
+          "items": {
+            "$ref": "#/$defs/PlanStep"
+          },
+          "maxItems": 40,
+          "minItems": 1,
+          "title": "Reference Plan",
+          "type": "array"
+        }
+      },
+      "required": [
+        "goal",
+        "reference_plan"
+      ],
+      "title": "Turn",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "allowed_tools": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Allowed Tools",
+      "type": "array"
+    },
+    "attack": {
+      "$ref": "#/$defs/AttackSpec"
+    },
+    "canaries": {
+      "items": {
+        "$ref": "#/$defs/CanarySpec"
+      },
+      "title": "Canaries",
+      "type": "array"
+    },
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "domain": {
+      "$ref": "#/$defs/Domain"
+    },
+    "extra_records": {
+      "additionalProperties": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "title": "Extra Records",
+      "type": "object"
+    },
+    "fixture": {
+      "title": "Fixture",
+      "type": "string"
+    },
+    "forbidden_effects": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Forbidden Effects",
+      "type": "array"
+    },
+    "id": {
+      "pattern": "^[a-z][a-z0-9_]{2,79}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "max_steps": {
+      "default": 30,
+      "maximum": 200,
+      "minimum": 1,
+      "title": "Max Steps",
+      "type": "integer"
+    },
+    "policy_profile": {
+      "pattern": "^[a-z][a-z0-9_]{1,63}$",
+      "title": "Policy Profile",
+      "type": "string"
+    },
+    "security_properties": {
+      "items": {
+        "$ref": "#/$defs/SecurityProperty"
+      },
+      "title": "Security Properties",
+      "type": "array"
+    },
+    "seed": {
+      "maximum": 2147483647,
+      "minimum": 0,
+      "title": "Seed",
+      "type": "integer"
+    },
+    "split": {
+      "$ref": "#/$defs/Split"
+    },
+    "success_conditions": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "custom": "#/$defs/CustomCondition",
+            "no_effect": "#/$defs/NoEffect",
+            "record_exists": "#/$defs/RecordExists",
+            "record_field_contains": "#/$defs/RecordFieldContains",
+            "record_field_equals": "#/$defs/RecordFieldEquals",
+            "response_contains": "#/$defs/ResponseContains"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/ResponseContains"
+          },
+          {
+            "$ref": "#/$defs/RecordExists"
+          },
+          {
+            "$ref": "#/$defs/RecordFieldEquals"
+          },
+          {
+            "$ref": "#/$defs/RecordFieldContains"
+          },
+          {
+            "$ref": "#/$defs/NoEffect"
+          },
+          {
+            "$ref": "#/$defs/CustomCondition"
+          }
+        ]
+      },
+      "minItems": 1,
+      "title": "Success Conditions",
+      "type": "array"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "title": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "turns": {
+      "items": {
+        "$ref": "#/$defs/Turn"
+      },
+      "maxItems": 5,
+      "minItems": 1,
+      "title": "Turns",
+      "type": "array"
+    },
+    "version": {
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "seed",
+    "domain",
+    "split",
+    "title",
+    "policy_profile",
+    "fixture",
+    "allowed_tools",
+    "turns",
+    "success_conditions"
+  ],
+  "title": "Scenario",
+  "type": "object"
+}

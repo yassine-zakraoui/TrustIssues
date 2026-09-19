@@ -1,0 +1,27 @@
+# Python / tooling
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Local outputs and configuration
+artifacts/
+competition.yaml
+.env
+
+# Trained weights (declare and ship them in your submission image instead)
+*.joblib
+*.safetensors
+*.bin
+presentations/
+presentation-assets/
+
+.deck-build/
+.deck-notes-build/

@@ -1,0 +1,115 @@
+"""Immutable event records and the append-only event log."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
+from enum import StrEnum
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class EventType(StrEnum):
+    USER_MESSAGE = "user_message"
+    RETRIEVAL_RESULT = "retrieval_result"
+    MEMORY_READ = "memory_read"
+    MEMORY_WRITE = "memory_write"
+    TOOL_REQUEST = "tool_request"
+    TOOL_RESULT = "tool_result"
+    MODEL_OUTPUT = "model_output"
+    DEFENSE_DECISION = "defense_decision"
+    HUMAN_CONFIRMATION = "human_confirmation"
+    POLICY_VIOLATION = "policy_violation"
+    TASK_SUCCESS = "task_success"
+    TASK_FAILURE = "task_failure"
+
+
+class Actor(StrEnum):
+    USER = "user"
+    AGENT = "agent"
+    DEFENSE = "defense"
+    TOOL_GATEWAY = "tool_gateway"
+    HUMAN_SIMULATOR = "human_simulator"
+    EVALUATOR = "evaluator"
+
+
+class Event(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    event_id: str
+    run_id: str
+    step_id: int = Field(ge=0)
+    seq: int = Field(ge=0)
+    type: EventType
+    timestamp: datetime
+    actor: Actor
+    payload: dict[str, Any] = Field(default_factory=dict)
+    provenance_refs: tuple[str, ...] = ()
+    policy: dict[str, Any] = Field(default_factory=dict)
+
+
+class LogicalClock:
+    """Deterministic timestamps: artifacts are byte-identical across reruns of the same seed."""
+
+    def __init__(self, seed: int, start: datetime | None = None) -> None:
+        base = start or datetime(2026, 9, 1, 8, 0, tzinfo=UTC)
+        self._now = base + timedelta(minutes=seed % 10_000)
+
+    def tick(self, seconds: int = 1) -> datetime:
+        self._now += timedelta(seconds=seconds)
+        return self._now
+
+
+class EventLog:
+    """In-memory append-only event log with deterministic IDs."""
+
+    def __init__(self, run_id: str, clock: LogicalClock) -> None:
+        self.run_id = run_id
+        self._clock = clock
+        self._events: list[Event] = []
+
+    def append(
+        self,
+        type: EventType,
+        actor: Actor,
+        step_id: int,
+        payload: dict[str, Any] | None = None,
+        provenance_refs: tuple[str, ...] = (),
+        policy: dict[str, Any] | None = None,
+    ) -> Event:
+        seq = len(self._events)
+        digest = hashlib.sha256(f"{self.run_id}:{seq}:{type}".encode()).hexdigest()[:12]
+        event = Event(
+            event_id=f"ev-{seq:04d}-{digest}",
+            run_id=self.run_id,
+            step_id=step_id,
+            seq=seq,
+            type=type,
+            timestamp=self._clock.tick(),
+            actor=actor,
+            payload=payload or {},
+            provenance_refs=provenance_refs,
+            policy=policy or {},
+        )
+        self._events.append(event)
+        return event
+
+    def __iter__(self) -> Iterator[Event]:
+        return iter(self._events)
+
+    def __len__(self) -> int:
+        return len(self._events)
+
+    @property
+    def events(self) -> tuple[Event, ...]:
+        return tuple(self._events)
+
+    def of_type(self, *types: EventType) -> list[Event]:
+        return [event for event in self._events if event.type in types]
+
+
+def event_to_json(event: Event) -> str:
+    return json.dumps(event.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))

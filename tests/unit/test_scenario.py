@@ -18,18 +18,16 @@ from tests.conftest import PUBLIC, ROOT, minimal_scenario
 def test_public_and_validation_counts() -> None:
     public = [load_scenario(p) for p in discover_scenarios(PUBLIC)]
     validation = [load_scenario(p) for p in discover_scenarios(ROOT / "scenarios" / "validation")]
-    assert len(public) >= 19 and len(validation) >= 9
-    # finance carries one extra scenario: the hand-authored difficulty-5 "long horizon" case.
-    expected_counts = {"enterprise": 6, "finance": 7, "soc": 6}
-    expected_indirect = {"enterprise": 1, "finance": 2, "soc": 1}
+    assert len(public) >= 40 and len(validation) >= 9
+    # Shape, not exact totals: the library grows, and a test that counts files fails on every
+    # addition without saying anything about whether the library still covers what it should.
     for domain in ("enterprise", "finance", "soc"):
         items = [s for s in public if s.domain.value == domain]
-        assert len(items) == expected_counts[domain]
+        families = {s.attack.family.value for s in items if s.attack.present}
         assert sum(s.is_benign and not s.is_hard_negative for s in items) == 2
-        assert sum(s.is_hard_negative for s in items) == 1
-        assert sum(s.attack.family.value == "direct_instruction" for s in items) == 1
-        assert sum(s.attack.family.value == "indirect_prompt_injection" for s in items) == expected_indirect[domain]
-        assert sum(s.attack.family.value in ("multi_step", "memory_poisoning") for s in items) == 1
+        assert sum(s.is_hard_negative for s in items) == 1, "each domain needs an over-refusal trap"
+        assert {"direct_instruction", "indirect_prompt_injection", "data_exfiltration"} <= families
+        assert families & {"multi_step", "memory_poisoning"}
     named = {s.id for s in public}
     assert {
         "enterprise_poisoned_invoice",

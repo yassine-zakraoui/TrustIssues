@@ -94,11 +94,16 @@ def _attacker_factory(attacker: str) -> Callable[[], Any] | None:
 
 
 def _model_factory(model: str) -> Callable[[], Any]:
-    """mock (default, offline) | qwen3-8b | any local Hugging Face model path."""
+    """mock (default) | ollama:<tag> | qwen3-8b | any local Hugging Face model path."""
     if model == "mock":
         from sentinel.models.mock import MockModelAdapter
 
         return MockModelAdapter
+    if model == "ollama" or model.startswith("ollama:"):
+        from sentinel.models.ollama_adapter import DEFAULT_OLLAMA_MODEL, OllamaModelAdapter
+
+        tag = model.split(":", 1)[1] if ":" in model else DEFAULT_OLLAMA_MODEL
+        return lambda: OllamaModelAdapter(tag)
     from sentinel.models.hf_adapter import DEFAULT_MODEL, HFModelAdapter
 
     path = DEFAULT_MODEL if model in ("qwen3-8b", "qwen3", "qwen", "default") else model
@@ -217,7 +222,9 @@ def run(
     defense_url: Annotated[str | None, typer.Option("--defense-url", help="Defense service URL.")] = None,
     attacker: Annotated[str, typer.Option(help="none | static | mutation")] = "static",
     attack_mode: Annotated[str, typer.Option(help="static | adaptive | none")] = "static",
-    model: Annotated[str, typer.Option(help="mock (offline, default) | qwen3-8b | a local HF model path")] = "mock",
+    model: Annotated[
+        str, typer.Option(help="mock (default) | ollama:<tag> | qwen3-8b | a local HF model path")
+    ] = "mock",
     artifacts: ArtifactsOpt = Path("artifacts"),
     timeline: Annotated[bool, typer.Option("--timeline/--no-timeline")] = True,
     config: ConfigOpt = None,
@@ -319,9 +326,10 @@ def _run_eval(
     from sentinel.storage.runs import ArtifactStore
 
     competition = _competition(config)
-    suite = load_suite(scenarios_path)
-    if not suite:
-        raise typer.BadParameter(f"no scenarios found under {scenarios_path}")
+    try:
+        suite = load_suite(scenarios_path)
+    except ScenarioError as exc:
+        raise typer.BadParameter(f"no scenarios found under {scenarios_path}") from exc
     wrong = [s.id for s in suite if s.split.value != split]
     if wrong:
         raise typer.BadParameter(f"scenarios with a split other than {split!r}: {', '.join(wrong[:5])}")
@@ -366,7 +374,9 @@ def _eval_command(split: str, default_path: Callable[[], Path]) -> Callable[...,
         scenarios: Annotated[Path | None, typer.Option("--scenarios", help="Override scenario path.")] = None,
         attacker: Annotated[str, typer.Option(help="none | static | mutation")] = "static",
         attack_mode: Annotated[str, typer.Option(help="static | adaptive | none")] = "static",
-        model: Annotated[str, typer.Option(help="mock (offline) | qwen3-8b | a local HF model path")] = "mock",
+        model: Annotated[
+        str, typer.Option(help="mock (default) | ollama:<tag> | qwen3-8b | a local HF model path")
+    ] = "mock",
         artifacts: ArtifactsOpt = Path("artifacts"),
         config: ConfigOpt = None,
         output: Annotated[Path | None, typer.Option("--output", help="Also write the scorecard here.")] = None,

@@ -20,9 +20,9 @@ def invoke(*args: str) -> tuple[int, str]:
 def test_scenarios_validate_and_list() -> None:
     code, output = invoke("scenarios", "validate", str(ROOT / "scenarios"), "--json")
     data = json.loads(output)
-    assert code == 0 and data["checked"] == 28 and data["failed"] == 0
+    assert code == 0 and data["checked"] == 49 and data["failed"] == 0
     code, output = invoke("scenarios", "list", str(ROOT / "scenarios" / "public"), "--json")
-    assert code == 0 and len(json.loads(output)) == 19
+    assert code == 0 and len(json.loads(output)) == 40
 
 
 def test_scenarios_validate_reports_problems(tmp_path: Path) -> None:

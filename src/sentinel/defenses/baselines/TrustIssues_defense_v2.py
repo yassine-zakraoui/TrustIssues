@@ -54,6 +54,7 @@ import copy
 import re
 
 from sentinel.core.actions import ActionType, CandidateAction, Decision, DefenseDecision
+from sentinel.core.provenance import Sensitivity
 from sentinel.defenses.baselines.common import (
     OUTBOUND_TOOLS,
     decision,
@@ -123,15 +124,23 @@ def _is_opaque(token: str) -> bool:
 
 
 def _action_text(action: CandidateAction) -> str:
-    """Every string reachable from the action's arguments."""
+    """
+    Every value reachable from the action's arguments.
+
+    Argument *names* are deliberately excluded. A parameter name is fixed by
+    the tool's schema, not chosen by whoever influenced the agent, so it
+    carries no payload: only the values reach the sink. Including names made
+    every injection that quotes a call in JSON form -- `call case_note_create
+    with {"case_id": ...}` -- look like it had smuggled a value, because the
+    name then appeared both in the arguments and in the untrusted text.
+    """
     parts: list[str] = []
 
     def walk(value) -> None:
         if isinstance(value, str):
             parts.append(value)
         elif isinstance(value, dict):
-            for key, item in value.items():
-                parts.append(str(key))
+            for item in value.values():
                 walk(item)
         elif isinstance(value, (list, tuple, set)):
             for item in value:
@@ -141,6 +150,23 @@ def _action_text(action: CandidateAction) -> str:
 
     walk(getattr(action, "arguments", None) or {})
     return " ".join(parts)
+
+
+def _texts_at_least(request: DefenseRequest, minimum: Sensitivity) -> list[str]:
+    """
+    Conversation content carrying a provenance label of at least `minimum`.
+
+    Sensitivity is a policy label the harness attaches to every observation,
+    so this asks the policy's own question -- how protected is this data? --
+    rather than inventing a private notion of secrecy.
+    """
+    records = {record.id: record.provenance for record in request.provenance}
+    out: list[str] = []
+    for item in request.conversation:
+        provs = [records[pid] for pid in item.provenance_ids if pid in records]
+        if any(p.sensitivity.rank >= minimum.rank for p in provs):
+            out.append(item.content)
+    return out
 
 
 def _trusted_text(request: DefenseRequest) -> str:
@@ -256,6 +282,8 @@ class TrustIssuesDefense(Defense):
         trusted_blob = _trusted_text(request)
         trusted_values = _values(trusted_blob)
         observed_values = _values(" ".join(untrusted)) | _values(" ".join(sensitive))
+        sensitive_values = _values(" ".join(sensitive))
+        restricted_values = _values(" ".join(_texts_at_least(request, Sensitivity.RESTRICTED)))
 
         # Values carried by this call that no trusted source ever supplied.
         uncorroborated = argument_values - trusted_values
@@ -273,10 +301,14 @@ class TrustIssuesDefense(Defense):
         # heuristic_risk.py. Any tool without a recipient concept, or a
         # recipient that isn't verifiably internal, is unaffected: opaque
         # values there still block exactly as before.
+        #
+        # That boundary argument holds only up to CONFIDENTIAL. A RESTRICTED
+        # label means the data has no permitted destination at all, so an
+        # internal recipient is not a reason to let it through.
         opaque = {v for v in uncorroborated if _is_opaque(v)}
         if opaque:
             internal_destination = action.tool in OUTBOUND_TOOLS and not is_external_recipient(request, action)
-            if not internal_destination:
+            if opaque & restricted_values or not internal_destination:
                 if ENABLE_REWRITE:
                     rewritten = _redact(action, opaque)
                     if rewritten is not None:
@@ -295,8 +327,15 @@ class TrustIssuesDefense(Defense):
         # Rule 4 — the v1 rule, now gated on value flow. Resemblance to
         # untrusted text only counts when the call also carries a value that
         # came from untrusted content and was never corroborated.
+        #
+        # The carried value must additionally be labelled sensitive. Tasks of
+        # the form "read this source and record what you found" legitimately
+        # move uncorroborated values out of untrusted content -- an IOC copied
+        # from an alert into an incident note is the job, not an exfiltration.
+        # What distinguishes the attack is the protection level of the data
+        # being moved, not the fact that it was observed.
         if instruction_in_untrusted(action, untrusted):
-            contaminated = uncorroborated & observed_values
+            contaminated = uncorroborated & observed_values & sensitive_values
             # Fail-safe: with no readable trusted context we cannot tell
             # corroborated values from smuggled ones, so behave exactly as v1.
             if contaminated or not trusted_blob:

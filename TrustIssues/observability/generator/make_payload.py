@@ -1,5 +1,5 @@
 """Assemble one payload for the redesigned dashboard: scenarios, KPIs,
-aggregates, baseline comparison and the prevented-leak ledger."""
+aggregates and the baseline comparison."""
 import glob
 import io
 import json
@@ -29,7 +29,6 @@ for p in glob.glob(os.path.join(ROOT, "*.json")):
         cards[s.get("deterministic_digest", "")[:16]] = s
 
 scen = json.load(io.open(os.path.join(SP, "scenarios.json"), encoding="utf-8"))
-intel = json.load(io.open("TrustIssues/observability/generator/intel_full.json", encoding="utf-8"))
 
 ours = cards["563f184f2093fc14"]
 m = ours["metrics"]
@@ -60,20 +59,6 @@ for s in scen:
     d["blocks"] += sum(1 for st in s["steps"] if st["decision"] == "BLOCK")
     d["fbr"] += sum(1 for st in s["steps"] if st.get("fbr"))
 
-# --- prevented-leak ledger from the allow_all counterfactual ----------
-prevented = []
-for sid, defs in intel.get("counter", {}).items():
-    aa = defs.get("allow_all")
-    if not aa:
-        continue
-    for f in aa.get("leaks", []):
-        prevented.append({
-            "s": sid, "step": f.get("step_id"),
-            "msg": f.get("msg", "")[:150], "sev": f.get("sev"),
-            "rule": f.get("rule"),
-        })
-prevented.sort(key=lambda r: (r["sev"] != "critical", r["s"]))
-
 payload = {
     "meta": {
         "digest": ours.get("deterministic_digest", "")[:16],
@@ -88,7 +73,6 @@ payload = {
         "benign": sum(1 for s in scen if s["family"] == "none"),
         "decisions": sum(dec.values()),
         "falseBlocks": sum(1 for s in scen for st in s["steps"] if st.get("fbr")),
-        "prevented": len(prevented),
     },
     "decisions": [
         {"k": "ALLOW", "v": dec["ALLOW"], "role": "good"},
@@ -124,6 +108,5 @@ print("scenarios :", len(scen))
 print("decisions :", payload["kpi"]["decisions"], dict(dec))
 print("codes     :", len(payload["codes"]))
 print("baselines :", len(payload["baselines"]))
-print("prevented :", len(prevented))
 print("maxstep   :", maxstep)
 print("bytes     :", os.path.getsize(out))

@@ -4,8 +4,8 @@
 **Defense id:** `trustissues_v2` — `src/sentinel/defenses/baselines/TrustIssues_defense_v2.py`
 **Benchmark version:** `sentinel-bench/0.1.0` · **attack mode:** `static` · **run seed:** `0` · **agent:** `mock`
 **Repository commit:** `a78c98ae3b5cf130766f57520bd666bab5c0dcaf` plus the working-tree change described in §10.1
-**Observability layer:** `TrustIssues/observability/Dashbord.html` — all 40 public scenarios, 213 decisions,
-plus a *Counterfactual Lab* replaying the same scenarios under 5 baselines and 7 ablations (§10.6)
+**Observability layer:** `TrustIssues/observability/Dashbord.html` — all 40 public scenarios and all
+213 decisions, with a per-step scenario explorer and the baseline comparison of §6.1 (§10.6)
 
 Every metric in this report is self-test evidence produced by `sentinel eval`. It is not an official
 score; judging is against the rubric in [scoring.md](scoring.md). Each figure is traceable to a
@@ -688,48 +688,53 @@ synthetic data shipped with the starter kit; every `SENTINEL_SECRET_*` value quo
 synthetic canary, not a real credential. The reference agent is the kit's built-in `mock` adapter — the
 `qwen3-8b` and `ollama` backends exist in the kit but were **not** used for any reported result.
 
-### 10.6 The Counterfactual Lab in the observability layer
+### 10.6 The observability layer
 
-A scorecard reports that ASR is 0.000. It does not show *what* was prevented. The dashboard therefore
-carries a second layer, built by joining runs that are all on disk:
+`TrustIssues/observability/Dashbord.html` is a single self-contained file — open it in any browser, no
+server and no build step. It renders from one embedded payload, so every figure on screen comes from the
+same scored run as this report (digest `563f184f2093fc14…`):
 
-- **Interception Ledger** — the 66 findings the harness actually recorded against `allow_all` across
-  31 scenarios, each named with its canary, destination and `rule_id`, paired with our decision at that
-  exact step. Nothing is predicted; both runs exist.
-- **Defense Race** — per scenario, one row per defense and one cell per step, marking the step at which
-  each baseline let a critical finding through. It shows *where* a baseline breaks, not only that it does.
-- **Ablation Lab** — the seven variants of §7 with the specific scenarios each one breaks. Selecting
-  `no_restricted_gate_and_rule4_off` names the four `ent_*_draft` scenarios of §8.4 directly.
-- **Value-Flow Probe** — the decisive contrast made interactive: two `email_draft` calls, both to an
-  *internal* recipient, both carrying an opaque uncorroborated value, decided oppositely
-  (`ent_backup_restore_draft` step 3 blocked, `enterprise_memory_poison` step 10 allowed) purely on the
-  `RESTRICTED` label. A rule keyed on the recipient allows both; a rule keyed on resemblance blocks both.
+- **Headline tiles** — attacks stopped 31/31, benign tasks completed 9/9, 213 decisions with 0 defense
+  errors, and 8 false blocks with the §8.1 caveat attached.
+- **Interception depth** — decisions by step position, allowed against intercepted, filterable by domain.
+  It makes one fact visible that the tables here do not: interception concentrates at **step 3**, the
+  step at which the exfiltration scenarios attempt their write, and is close to flat elsewhere.
+- **Decisions by reason code**, **scenarios by attack family**, and a **decision distribution** donut.
+  The donut encodes allow / block / escalate as *statuses*, so each legend entry carries an icon and a
+  label as well as a colour — red and green are not separable under deuteranopia, and colour alone would
+  therefore not be readable.
+- **Defense comparison** — ASR and FBR for all six defenses of §6.1, side by side.
+- **Scenario explorer** — filter by domain or family, then read any scenario's full timeline: tool,
+  decision, risk score and reason codes per step. The eight disputed blocks of §8.1 each carry an inline
+  explanation of why the "false" block is the correct decision.
 
-The probe's extractor is a JavaScript port of `_values()` and `_is_opaque()`. On load it replays all 164
-real tool-call decisions and checks its output against the Python ground truth captured from the scored
-run; the badge in the panel header is that check running live, and it reads **164/164**. The port is
-labelled as a port, and its verification is displayed rather than asserted.
+Four of the charts expose a table view, satisfying the relief rule where a status or series colour sits
+below 3:1 contrast on its surface.
 
-The embedded data is regenerated from the artifacts by the scripts in
+The embedded payload is regenerated from the artifacts by two scripts in
 `TrustIssues/observability/generator/`:
 
 ```bash
 G=TrustIssues/observability/generator
-uv run python $G/export_intel.py $G/intel.json                        # capture internals
-uv run python $G/build_data.py   $G                                   # join baselines + ablations
-uv run python $G/inject.py       $G TrustIssues/observability/Dashbord.html
-node $G/render_test.js TrustIssues/observability/Dashbord.html        # render + interaction check
+uv run python $G/make_payload.py                                   # scorecards -> dash_payload.json
+uv run python $G/inject_ti.py TrustIssues/observability/Dashbord.html
+node $G/ti_test.js TrustIssues/observability/Dashbord.html         # render + interaction check
 ```
 
-`export_intel.py` wraps `decide()` to capture each decision's value-flow intermediates — it re-emits
-digest `563f184f2093fc14…`, confirming the instrumentation changes no decision — and `build_data.py`
-joins those internals with the five baseline scorecards and the seven ablation scorecards, **selected by
-deterministic digest, never by timestamp** (§10.3). Wall-clock latency is excluded from the embedded
-payload for the same reason it is excluded from the digest, so two consecutive regenerations produce a
-**byte-identical** dashboard.
+`make_payload.py` reads the six baseline scorecards **selected by deterministic digest, never by
+timestamp** (§10.3) and aggregates the scenario set; `inject_ti.py` splices that payload into
+`template.html`. Wall-clock latency is excluded from the payload for the same reason it is excluded from
+the digest, so two consecutive regenerations produce a **byte-identical** file.
 
-`render_test.js` executes the dashboard's real script against a minimal DOM and asserts that every panel
-renders and every control fires: it reports **0 errors** on the shipped file. It is a test harness, not a
-browser. It verifies that the JavaScript runs and produces the expected markup; it does **not** verify
-layout, styling or responsive behaviour, and no browser was available in the environment where this was
-built, so those remain unchecked.
+`ti_test.js` executes the dashboard's real script against a minimal DOM: it asserts every panel renders,
+every control fires, and — by stepping through all 40 scenarios — that the explorer emits exactly **213
+timeline steps and 8 false-block notes**, matching the scored run. It reports **0 errors** on the shipped
+file. It is a test harness, not a browser: it verifies that the JavaScript runs and produces the expected
+markup, and does **not** verify layout, styling or responsive behaviour. No browser was available in the
+environment where this was built, so those remain unchecked.
+
+Two further scripts in the same directory, `export_intel.py` and `build_data.py`, are the instrumentation
+behind §7 and §8 rather than part of the dashboard chain. `export_intel.py` wraps `decide()` to capture
+each decision's value-flow intermediates and re-emits digest `563f184f2093fc14…`, confirming that the
+instrumentation changes no decision; `build_data.py` joins those internals with the baseline and ablation
+scorecards to produce the counterfactual evidence quoted in §8.
